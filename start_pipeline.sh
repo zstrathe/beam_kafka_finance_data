@@ -1,8 +1,12 @@
-source venv/bin/activate
-yes | confluent local kafka start --plaintext-ports="41239"
-echo "Waiting 5 seconds before creating topic..."
-sleep 5
-confluent local kafka topic create data_stream
-echo "Starting Producer from websocket data..."
-python3 websocket_kafka_bridge/bridge.py
-sleep 5
+echo "Starting data pipeline services..."
+
+docker compose build --no-cache # rebuild the container images to ensure any changes are pushed
+echo "Finished rebuilding container images!"
+
+# force recreate the container images (in case any are currently running)
+# and launch compose watch in a new terminal window assumes that running gnome-terminal (i.e., Ubuntu)
+#docker compose up --force-recreate --remove-orphans && gnome-terminal -x sh -c "docker compose watch"
+
+docker compose up --force-recreate --remove-orphans &
+gnome-terminal -x sh -c "echo Waiting 5 seconds to start compose watch; sleep 5; docker compose watch" &
+

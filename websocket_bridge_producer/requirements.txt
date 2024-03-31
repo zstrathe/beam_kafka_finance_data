@@ -1,0 +1,4 @@
+confluent-kafka==2.3.0
+websocket-client==1.7.0
+betterproto==1.2.5
+

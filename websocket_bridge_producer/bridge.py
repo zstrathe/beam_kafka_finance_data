@@ -14,8 +14,9 @@ logging.basicConfig(level=logging.INFO)
 
 class OpenTheSocket:
     # Kafka configuration
-    kafka_conf = {'bootstrap.servers': 'localhost:41239',
-                  'client.id': socket.gethostname()}
+    kafka_conf = {'bootstrap.servers': 'broker:29092'  #'host.docker.internal:41239'
+                #   'client.id': socket.gethostname()
+                  }
     y_finance_data_proto_parser = PricingData()
 
     def __init__(self, socket_url:str|None=None):
@@ -34,14 +35,13 @@ class OpenTheSocket:
     # WebSocket message callback function
     def on_message(self, ws, message):
         try:
-            message_bytes = base64.b64decode(message)
-            dict_message = self.y_finance_data_proto_parser.parse(message_bytes).to_json()
-            print('message type:', type(dict_message), '\n', dict_message, '\n')
-            # key = dict_message['eventId']
-            # value = dict_message['events']
-            print(f'Received a message from websocket: {message}')
-            self.producer.produce('data_stream', value=dict_message.encode('utf-8'))
-            self.producer.flush()
+            # message_bytes = base64.b64decode(message)
+            # dict_message = self.y_finance_data_proto_parser.parse(message_bytes).to_json()
+            # print('message type:', type(dict_message), '\n', dict_message, '\n')
+            # print(f'Received a message from websocket: {message}')
+            # self.producer.produce('data_stream', value=dict_message.encode('utf-8'))
+            self.producer.produce('data_stream', value=message)
+            self.producer.flush() 
         except Exception as e:
             logging.error(f"Error producing Kafka message: {e}")
 
@@ -54,7 +54,7 @@ class OpenTheSocket:
 
 
     def on_open(self, ws):
-        ticker_symbols = ['AAPL', 'AMZN']
+        ticker_symbols = ['AAPL', 'AMZN', 'NVDA']
         _req = {"subscribe": ticker_symbols}
         print('Sending request for data:', _req)
         ws.send(json.dumps(_req))
@@ -63,7 +63,8 @@ class OpenTheSocket:
         self.ws = websocket.WebSocketApp(socket_url,
                                 on_message=self.on_message,
                                 on_error=self.on_error,
-                                on_open=self.on_open)
+                                #on_open=self.on_open
+                                )
         ws_thread = threading.Thread(target=self.ws.run_forever)
         ws_thread.start()
 
@@ -84,5 +85,5 @@ class OpenTheSocket:
 
   
 if __name__ == '__main__':
-    OpenTheSocket() # 'wss://api.gemini.com/v1/marketdata/BTCUSD'
+    OpenTheSocket('wss://api.gemini.com/v1/marketdata/BTCUSD') # 'wss://api.gemini.com/v1/marketdata/BTCUSD'
 
