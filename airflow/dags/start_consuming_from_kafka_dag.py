@@ -1,18 +1,26 @@
-from datetime import datetime, timedelta
+import logging
+import socket
+from datetime import datetime
 from confluent_kafka import Consumer, TopicPartition
 from airflow import DAG
 from airflow.models import TaskInstance
 from airflow.models.dagrun import DagRun
-from airflow.operators.bash_operator import BashOperator
-from airflow.operators.python_operator import PythonOperator
+from airflow.operators.python_operator import PythonOperator, ShortCircuitOperator
 from kafka import BrokerConnection
 from kafka.protocol.commit import *
-import socket
-from confluent_kafka import Consumer, TopicPartition
 
-import logging
 logger = logging.getLogger("airflow.task")
 
+def check_task_status(task_instance_str, current_run_id):
+    dag_id = task_instance_str.split('__')[0]
+    dag_runs = DagRun.find(dag_id=dag_id)
+    for dag_run in dag_runs:
+        if dag_run.state == 'running' and dag_run.run_id != current_run_id:
+            print('TEST: Detected that this DAG is already currently running!')
+            return False
+    print('TEST: did not detect DAG currently running!')
+    return True
+    
 def check_kafka_topic():
     topic_name = 'data_stream'
     group_id = 'pipeline-consumer'
@@ -70,6 +78,7 @@ def check_kafka_topic():
     ############
     ### THIRD: Check if there are new messages
     ############
+    print("TEST CURRENT AND END OFFSETS:", current_offsets, end_offsets)
     if current_offsets:
         for partition, current_offset in current_offsets.items():
             end_offset = end_offsets[partition]
@@ -78,29 +87,20 @@ def check_kafka_topic():
                 # New messages are available
                 print('NEW MESSAGES AVAILABLE IN KAFKA')
                 return True
+    elif end_offsets:
+        print('COULD NOT RETRIEVE ANY CURRENT OFFSETS, BUT FOUND END OFFSETS:', end_offsets)
+        return True
 
     # No new messages found
     print('NEW MESSAGES ARE NOT AVAILABLE IN KAFKA')
     return False
-    
-def check_task_status(dag_id, current_run_id):
-    dag_runs = DagRun.find(dag_id=dag_id)
-    for dag_run in dag_runs:
-        if dag_run.state == 'running' and dag_run.run_id != current_run_id:
-            print('Detected that this DAG is already currently running!')
-            return True
-    return False
-    
-def run_spark_streaming_task(new_messages_available, spark_task_running_status):
-    # trigger the Spark Streaming task
-    if new_messages_available and not spark_task_running_status:
-        import time
-        print('TEST: running spark streaming task...sleeping for 1 hour')
-        time.sleep(60*60) # sleep for 1 hour
-        print('TEST: finished task!')
-    else:
-        print('TEST: not running spark streaming task (no messages available or DAG is already running)')
 
+def run_spark_streaming_task():
+    # start the Spark Streaming task
+    print('TEST: running spark streaming task...sleeping for 1 hour')
+    import time
+    time.sleep(60*60) # sleep for 1 hour
+    print('TEST: finished task!')
 
 # default_args = {
 #     'owner': 'your_name',
@@ -120,21 +120,21 @@ with DAG(
     schedule='*/15 * * * *',
     catchup=False
     ) as dag:
-    check_kafka_task = PythonOperator(
+
+    check_not_already_running = ShortCircuitOperator(
+        task_id='dag_not_already_running',
+        python_callable=check_task_status,
+        op_args=['{{task_instance_key_str}}', '{{run_id}}']
+    )
+    
+    check_kafka_new_messages = ShortCircuitOperator(
         task_id='check_if_new_messages_in_kafka_topic',
         python_callable=check_kafka_topic
     )
 
-    check_spark_task_status = PythonOperator(
-        task_id='check_if_spark_task_is_running',
-        python_callable=check_task_status,
-        op_args=['kafka_spark_streaming_dag', '{{run_id}}']
-    )
-
     run_spark_streaming_task = PythonOperator(
         task_id='run_spark_streaming_task',
-        python_callable=run_spark_streaming_task,
-        op_args=[check_kafka_task.output, check_spark_task_status.output]
+        python_callable=run_spark_streaming_task
     )
 
-    check_kafka_task >> check_spark_task_status >> run_spark_streaming_task
+    [check_not_already_running, check_kafka_new_messages] >> run_spark_streaming_task
