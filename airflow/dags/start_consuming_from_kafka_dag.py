@@ -3,33 +3,35 @@ import socket
 from datetime import datetime
 from confluent_kafka import Consumer, TopicPartition
 from airflow import DAG
+from airflow import models
 from airflow.models import TaskInstance
 from airflow.models.dagrun import DagRun
 from airflow.operators.python_operator import PythonOperator, ShortCircuitOperator
+#from airflow.providers.apache.beam.operators.beam import BeamRunPythonPipelineOperator
+
+from airflow.sensors.python import PythonSensor
 from kafka import BrokerConnection
 from kafka.protocol.commit import *
 
-logger = logging.getLogger("airflow.task")
+# add .packages/ directory to sys.path, so that other relative modules can be imported
+import os
+import sys
 
-def check_task_status(task_instance_str, current_run_id):
-    dag_id = task_instance_str.split('__')[0]
-    dag_runs = DagRun.find(dag_id=dag_id)
-    for dag_run in dag_runs:
-        if dag_run.state == 'running' and dag_run.run_id != current_run_id:
-            print('TEST: Detected that this DAG is already currently running!')
-            return False
-    print('TEST: did not detect DAG currently running!')
-    return True
-    
-def check_kafka_topic():
+sys.path.append(os.path.dirname('/opt/airflow/plugins')) 
+from test_operator import BeamRunPythonPipelineOperator
+
+logger = logging.getLogger("airflow.task")
+ 
+def check_kafka_topic_new_messages_threshold_sensor(msg_threshold: int):
+    '''airflow sensor to check kafka topic for new messages for specified group_id
+        - args: threshold: int: minumum number of new messages required to trigger sensor 
+    '''
     topic_name = 'data_stream'
     group_id = 'pipeline-consumer'
     hostname = 'broker'
     port = 29092
 
-    ############
     ### FIRST: get the current offset values for each partition in the kafka topic
-    ############
     # use python-kafka module for this 
     # link to source for getting offset data: https://stackoverflow.com/a/49244595
     bc = BrokerConnection(hostname, port, socket.AF_INET)
@@ -44,7 +46,8 @@ def check_kafka_topic():
         for resp, f in bc.recv():
             f.success(resp)
 
-    current_offsets = None
+    # setup default for current_offsets if none exist yet (i.e., partition 0, offset 0)
+    current_offsets = {0: 0} 
     for t in future.value.topics:
         # t[0] is the topic string
         if t[0] == topic_name:
@@ -55,9 +58,7 @@ def check_kafka_topic():
             }
     print("TEST: CURRENT OFFSETS:", current_offsets)
     
-    ############
     ### SECOND: get the total number of messages for each partition in the kafka topic
-    ############
     consumer = Consumer({"bootstrap.servers": f"{hostname}:{port}",
                          "group.id": group_id})
   
@@ -75,32 +76,24 @@ def check_kafka_topic():
         for partition in topic_partitions
     }
     consumer.close()
-    ############
+    
     ### THIRD: Check if there are new messages
-    ############
     print("TEST CURRENT AND END OFFSETS:", current_offsets, end_offsets)
-    if current_offsets:
-        for partition, current_offset in current_offsets.items():
-            end_offset = end_offsets[partition]
-            print('TEST: current_offset:', current_offset, '...end_offset:', end_offset)
-            if current_offset < end_offset:
-                # New messages are available
-                print('NEW MESSAGES AVAILABLE IN KAFKA')
-                return True
-    elif end_offsets:
-        print('COULD NOT RETRIEVE ANY CURRENT OFFSETS, BUT FOUND END OFFSETS:', end_offsets)
-        return True
+    for partition, current_offset in current_offsets.items():
+        end_offset = end_offsets[partition]
+        print('TEST: current_offset:', current_offset, '...end_offset:', end_offset)
+        num_new_messages = end_offset - current_offset
+        if num_new_messages >= msg_threshold:
+            # New messages are available
+            print(f'TEST: ABOVE MESSAGE THRESHOLD: {num_new_messages} NEW MESSAGES AVAILABLE IN KAFKA')
+            return True
+        elif num_new_messages > 0:
+            print(f'TEST: BELOW MESSAGE THRESHOLD: {num_new_messages} NEW MESSAGES AVAILABLE IN KAFKA')
+            return False
 
     # No new messages found
     print('NEW MESSAGES ARE NOT AVAILABLE IN KAFKA')
     return False
-
-def run_spark_streaming_task():
-    # start the Spark Streaming task
-    print('TEST: running spark streaming task...sleeping for 1 hour')
-    import time
-    time.sleep(60*60) # sleep for 1 hour
-    print('TEST: finished task!')
 
 # default_args = {
 #     'owner': 'your_name',
@@ -117,24 +110,39 @@ def run_spark_streaming_task():
 with DAG(
     dag_id='kafka_spark_streaming_dag',
     start_date=datetime(2024, 3, 30),
-    schedule='*/15 * * * *',
+    schedule='@once',   #  '@continuous',   #'*/15 * * * *',
+    max_active_runs=1,
     catchup=False
     ) as dag:
-
-    check_not_already_running = ShortCircuitOperator(
-        task_id='dag_not_already_running',
-        python_callable=check_task_status,
-        op_args=['{{task_instance_key_str}}', '{{run_id}}']
-    )
     
-    check_kafka_new_messages = ShortCircuitOperator(
+    check_kafka_new_messages = PythonSensor(
         task_id='check_if_new_messages_in_kafka_topic',
-        python_callable=check_kafka_topic
+        python_callable=check_kafka_topic_new_messages_threshold_sensor,
+        op_kwargs={'msg_threshold':300},
+        mode='reschedule',
+        poke_interval=600 # 10 minutes
     )
 
-    run_spark_streaming_task = PythonOperator(
-        task_id='run_spark_streaming_task',
-        python_callable=run_spark_streaming_task
+    run_beam_consumer_batch_task = BeamRunPythonPipelineOperator(
+        task_id="start_python_pipeline_local_direct_runner",
+        
+        # Beam hangs up on running this file for some reason, though the "TESTING PIPELINE"
+        # works just fine. This particular pipeline requires running Java to utilize the 
+        # ReadFromKafka BeamIO method in the pipeline, so that may be an additional complexity 
+        # layer that makes running this pipeline with Beam difficult and easy to break, so 
+        # perhaps utilizing Spark would be a much better alternative
+        # 
+        # py_file="/opt/airflow/beam_pipeline/beam_pipeline.py",
+        # pipeline_options={"num_messages": 5},
+        
+        ###### TESTING PIPELINE
+        py_file="/opt/airflow/beam_pipeline/test_wordcount_beam.py", # "apache_beam.examples.wordcount",
+        pipeline_options={"input": "/opt/airflow/beam_pipeline/test.txt", "output": "/opt/airflow/beam_pipeline/output-test.txt"},
+        
+        runner='DirectRunner',
+        py_requirements=["apache-beam[gcp]==2.46.0"],
+        py_interpreter="python3",
+        py_system_site_packages=False,
     )
 
-    [check_not_already_running, check_kafka_new_messages] >> run_spark_streaming_task
+    check_kafka_new_messages >> run_beam_consumer_batch_task

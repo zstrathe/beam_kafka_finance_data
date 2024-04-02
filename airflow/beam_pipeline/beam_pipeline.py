@@ -34,9 +34,16 @@ kafka_consumer_config = {
 
 
 def run(argv=None, save_main_session=True):
-  """Main entry point; defines and runs the wordcount pipeline."""
+  """Main entry point; defines and runs the pipeline."""
   parser = argparse.ArgumentParser()
-  pipeline_args = parser.parse_known_args(argv)[1]
+  parser.add_argument(
+        '--num_messages',
+        dest='num_messages',
+        type=int,
+        required=False,
+        help='Number of messages for beam pipeline to consume from kafka topic')
+  known_args, pipeline_args = parser.parse_known_args(argv)
+  print("TEST: known_args:", known_args, "; pipeline_args:", pipeline_args)
 
   # We use the save_main_session option because one or more DoFn's in this
   # workflow rely on global context (e.g., a module imported at module level).
@@ -50,7 +57,7 @@ def run(argv=None, save_main_session=True):
     websocket_data = p | ReadFromKafka(
         consumer_config=kafka_consumer_config,
         topics=['data_stream'],
-        max_read_time=1,
+        max_num_records=10,
         commit_offset_in_finalize=True
     )
         
