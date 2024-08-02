@@ -7,7 +7,7 @@ from airflow import models
 from airflow.models import TaskInstance
 from airflow.models.dagrun import DagRun
 from airflow.operators.python_operator import PythonOperator, ShortCircuitOperator
-#from airflow.providers.apache.beam.operators.beam import BeamRunPythonPipelineOperator
+from airflow.providers.apache.beam.operators.beam import BeamRunPythonPipelineOperator
 
 from airflow.sensors.python import PythonSensor
 from kafka import BrokerConnection
@@ -17,8 +17,8 @@ from kafka.protocol.commit import *
 import os
 import sys
 
-sys.path.append(os.path.dirname('/opt/airflow/plugins')) 
-from test_operator import BeamRunPythonPipelineOperator
+#sys.path.append(os.path.dirname('/opt/airflow/plugins')) 
+#from test_operator import BeamRunPythonPipelineOperator
 
 logger = logging.getLogger("airflow.task")
  
@@ -78,9 +78,9 @@ def check_kafka_topic_new_messages_threshold_sensor(msg_threshold: int):
     consumer.close()
     
     ### THIRD: Check if there are new messages
-    print("TEST CURRENT AND END OFFSETS:", current_offsets, end_offsets)
+    print("TEST CURRENT AND END OFFSETS:", " curr: ", current_offsets, "; end: ", end_offsets)
     for partition, current_offset in current_offsets.items():
-        end_offset = end_offsets[partition]
+        end_offset = end_offsets.get(partition, 0)
         print('TEST: current_offset:', current_offset, '...end_offset:', end_offset)
         num_new_messages = end_offset - current_offset
         if num_new_messages >= msg_threshold:
@@ -132,17 +132,17 @@ with DAG(
         # layer that makes running this pipeline with Beam difficult and easy to break, so 
         # perhaps utilizing Spark would be a much better alternative
         # 
-        # py_file="/opt/airflow/beam_pipeline/beam_pipeline.py",
-        # pipeline_options={"num_messages": 5},
+        #py_file="/opt/airflow/beam_pipeline/beam_pipeline.py",
+        #pipeline_options={"num_messages": 5},
         
         ###### TESTING PIPELINE
         py_file="/opt/airflow/beam_pipeline/test_wordcount_beam.py", # "apache_beam.examples.wordcount",
         pipeline_options={"input": "/opt/airflow/beam_pipeline/test.txt", "output": "/opt/airflow/beam_pipeline/output-test.txt"},
         
         runner='DirectRunner',
-        py_requirements=["apache-beam[gcp]==2.46.0"],
+        #py_requirements=["apache-beam==2.46.0"],
         py_interpreter="python3",
         py_system_site_packages=False,
     )
 
-    check_kafka_new_messages >> run_beam_consumer_batch_task
+    check_kafka_new_messages #>> run_beam_consumer_batch_task

@@ -12,7 +12,7 @@ from yfindata import PricingData
 logging.basicConfig(level=logging.INFO)
 
 
-class OpenTheSocket:
+class StockPricingDataSocket:
     # Kafka configuration
     kafka_conf = {'bootstrap.servers': 'broker:29092'}
 
@@ -37,8 +37,8 @@ class OpenTheSocket:
         try:
             message_bytes = base64.b64decode(message)
             dict_message = self.y_finance_data_proto_parser.parse(message_bytes).to_json()
-            print('message type:', type(dict_message), '\n', dict_message, '\n')
-            print(f'Received a message from websocket: {message}')
+            #print('message type:', type(dict_message), '\n', dict_message, '\n')
+            #print(f'Received a message from websocket: {message}')
             self.producer.produce('data_stream', value=dict_message.encode('utf-8'))
             self.producer.produce('data_stream', value=message)
             self.producer.flush() 
@@ -59,7 +59,7 @@ class OpenTheSocket:
         print('Sending request for data:', _req)
         ws.send(json.dumps(_req))
 
-    def open_socket_connection(self, socket_url='wss://streamer.finance.yahoo.com/'):
+    def open_socket_connection(self, socket_url='wss://streamer.finance.yahoo.com/'): # 'wss://api.gemini.com/v1/marketdata/BTCUSD'
         self.ws = websocket.WebSocketApp(socket_url,
                                 on_message=self.on_message,
                                 on_error=self.on_error,
@@ -85,5 +85,5 @@ class OpenTheSocket:
 
   
 if __name__ == '__main__':
-    OpenTheSocket() # 'wss://api.gemini.com/v1/marketdata/BTCUSD'
+    StockPricingDataSocket().open_socket_connection() 
 

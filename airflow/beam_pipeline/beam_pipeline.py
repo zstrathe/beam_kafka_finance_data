@@ -13,7 +13,7 @@ from apache_beam.options.pipeline_options import SetupOptions
 
 # Setup Kafka consumer configuration
 kafka_consumer_config = {
-    'bootstrap.servers': 'localhost:9092',
+    'bootstrap.servers':'localhost:29092', #'broker:9092',
     'group.id': 'pipeline-consumer'
 }
 
