@@ -115,34 +115,22 @@ with DAG(
     catchup=False
     ) as dag:
     
-    check_kafka_new_messages = PythonSensor(
-        task_id='check_if_new_messages_in_kafka_topic',
-        python_callable=check_kafka_topic_new_messages_threshold_sensor,
-        op_kwargs={'msg_threshold':300},
-        mode='reschedule',
-        poke_interval=600 # 10 minutes
-    )
+    # check_kafka_new_messages = PythonSensor(
+    #     task_id='check_if_new_messages_in_kafka_topic',
+    #     python_callable=check_kafka_topic_new_messages_threshold_sensor,
+    #     op_kwargs={'msg_threshold':300},
+    #     mode='reschedule',
+    #     poke_interval=600 # 10 minutes
+    # )
 
     run_beam_consumer_batch_task = BeamRunPythonPipelineOperator(
         task_id="start_python_pipeline_local_direct_runner",
-        
-        # Beam hangs up on running this file for some reason, though the "TESTING PIPELINE"
-        # works just fine. This particular pipeline requires running Java to utilize the 
-        # ReadFromKafka BeamIO method in the pipeline, so that may be an additional complexity 
-        # layer that makes running this pipeline with Beam difficult and easy to break, so 
-        # perhaps utilizing Spark would be a much better alternative
-        # 
-        #py_file="/opt/airflow/beam_pipeline/beam_pipeline.py",
-        #pipeline_options={"num_messages": 5},
-        
-        ###### TESTING PIPELINE
-        py_file="/opt/airflow/beam_pipeline/test_wordcount_beam.py", # "apache_beam.examples.wordcount",
-        pipeline_options={"input": "/opt/airflow/beam_pipeline/test.txt", "output": "/opt/airflow/beam_pipeline/output-test.txt"},
-        
+        py_file="/opt/airflow/beam_pipeline/beam_pipeline.py",
+        pipeline_options={"num_messages": 5},
         runner='DirectRunner',
-        #py_requirements=["apache-beam==2.46.0"],
         py_interpreter="python3",
         py_system_site_packages=False,
     )
 
-    check_kafka_new_messages #>> run_beam_consumer_batch_task
+    # check_kafka_new_messages >> 
+    run_beam_consumer_batch_task
