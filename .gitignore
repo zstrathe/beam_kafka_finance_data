@@ -8,3 +8,6 @@ __pycache__
 *.backup
 *(copy)*
 *_test_*
+/airflow/config
+/kubernetes
+*.code-workspace
