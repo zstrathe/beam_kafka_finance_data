@@ -2,88 +2,70 @@ import logging
 import threading
 import time
 import json
-import socket
-import websocket
 import base64
+import websocket
+import rel
 from confluent_kafka import Producer
 from yfindata import PricingData
 
-
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 
 class StockPricingDataSocket:
     # Kafka configuration
     kafka_conf = {'bootstrap.servers': 'broker:29092'}
+    
+    producer = Producer(kafka_conf)
 
     # setup the proto parser for the yahoo finance data stream
     y_finance_data_proto_parser = PricingData()
 
-    def __init__(self, socket_url:str|None=None):
-       
-        self.producer = Producer(self.kafka_conf)
-        
-        # start the websocket connection thread
-        if not socket_url:
-            self.open_socket_connection()
-        else: 
-            self.open_socket_connection(socket_url)
+    def __init__(self):
+        self.message_count = 0
 
-        # # start the connection monitor thread
-        # self.monitor_connection()
-     
+    def run(self):
+        # start a thread to monitor message count per minute
+        threading.Thread(target=self.monitor_message_count, kwargs={'time_interval':60}).start()
+
+        # start the websocket connection (use rel to dispatch and autoreconnect, 5 second delay)
+        ws = websocket.WebSocketApp(
+            url='wss://streamer.finance.yahoo.com/',
+            on_message=self.on_message,
+            on_error=self.on_error,
+            on_open=self.on_open
+        )
+        ws.run_forever(dispatcher=rel, reconnect=5)
+        rel.signal(2, rel.abort)
+        rel.dispatch()
+ 
+    def monitor_message_count(self, time_interval=60):
+        while True:
+            initial_count = self.message_count
+            time.sleep(time_interval)
+            logging.info('Count of messages in last %i seconds: %i' , time_interval, self.message_count - initial_count)
+
     # WebSocket message callback function
+    def on_open(self, ws):
+        ticker_symbols = ['AAPL', 'AMZN', 'NVDA']
+        _req = {"subscribe": ticker_symbols}
+        logging.info("Sending request for data: %s", _req)
+        ws.send(json.dumps(_req))
+
     def on_message(self, ws, message):
         try:
             message_bytes = base64.b64decode(message)
             dict_message = self.y_finance_data_proto_parser.parse(message_bytes).to_json()
-            #print('message type:', type(dict_message), '\n', dict_message, '\n')
-            #print(f'Received a message from websocket: {message}')
             self.producer.produce('data_stream', value=dict_message.encode('utf-8'))
-            self.producer.produce('data_stream', value=message)
-            self.producer.flush() 
+            self.producer.flush()
+            self.message_count += 1
         except Exception as e:
-            logging.error(f"Error producing Kafka message: {e}")
-
+            logging.error("Error producing Kafka message: %s", e)
 
     # WebSocket error callback function    
     def on_error(self, ws, error):
-        logging.error(f"WebSocket error: {error}")
-        time.sleep(2)
-        self.open_socket_connection()
+        logging.error(f"WebSocket error: %s", error)
 
 
-    def on_open(self, ws):
-        ticker_symbols = ['AAPL', 'AMZN', 'NVDA']
-        _req = {"subscribe": ticker_symbols}
-        print('Sending request for data:', _req)
-        ws.send(json.dumps(_req))
-
-    def open_socket_connection(self, socket_url='wss://streamer.finance.yahoo.com/'): # 'wss://api.gemini.com/v1/marketdata/BTCUSD'
-        self.ws = websocket.WebSocketApp(socket_url,
-                                on_message=self.on_message,
-                                on_error=self.on_error,
-                                on_open=self.on_open
-                                )
-        ws_thread = threading.Thread(target=self.ws.run_forever)
-        ws_thread.start()
-
-
-    # def monitor_connection(self):
-    #     def _mon_func():
-    #         while True:
-    #             if hasattr(self.ws.sock, 'connected') and self.ws.sock.connected:
-    #                 pass
-    #             else:
-    #                 self.open_socket_connection()
-    #             time.sleep(5)  # Check every 5 seconds
-    #     # add an initial delay when starting monitor thread, so that socket has time to open
-    #     time.sleep(3)
-    #     print('STARTING CONNECTION MONITOR...')
-    #     mon_thread = threading.Thread(target=_mon_func())
-    #     mon_thread.start()
-
-  
 if __name__ == '__main__':
-    StockPricingDataSocket().open_socket_connection() 
+    StockPricingDataSocket().run()
 
