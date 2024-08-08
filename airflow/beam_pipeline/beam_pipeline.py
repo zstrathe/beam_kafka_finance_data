@@ -1,23 +1,22 @@
 import argparse
 import logging
-import re
+#import re
 import json
-import typing
-from datetime import datetime
+#import typing
+#from datetime import datetime
 
 import apache_beam as beam
-from apache_beam import coders
-from apache_beam.io import ReadFromText
-from apache_beam.io import WriteToText
+#from apache_beam import coders
+#from apache_beam.io import ReadFromText
+#from apache_beam.io import WriteToText
 from apache_beam.io.kafka import ReadFromKafka
-from apache_beam.io.jdbc import WriteToJdbc
+#from apache_beam.io.jdbc import WriteToJdbc
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import SetupOptions
-from apache_beam.typehints import typehints
-from apache_beam.typehints import with_input_types, with_output_types
+#from apache_beam.typehints import typehints
+#from apache_beam.typehints import with_input_types, with_output_types
 from apache_beam.transforms.trigger import AfterWatermark, AfterCount, AfterProcessingTime
 from beam_postgres.io import WriteToPostgres
-from dataclasses import dataclass
 
 # Setup Kafka consumer configuration
 kafka_consumer_config = {
@@ -26,9 +25,9 @@ kafka_consumer_config = {
 }
 
 # DBRowSchema = typing.NamedTuple('DBRowSchema', [
-#     ('stock_ticker', str), # beam.coders.StrUtf8Coder
-#     ('timestamp', float), # beam.coders.FloatCoder
-#     ('price', float) # beam.coders.FloatCoder
+#     ('stock_ticker', str),
+#     ('timestamp', float),
+#     ('price', float)
 # ])
 # coders.registry.register_coder(DBRowSchema, coders.RowCoder)
 
@@ -72,8 +71,8 @@ def run(argv=None, save_main_session=True):
         
         websocket_data = (pipeline 
             | beam.Create((
-                ('event', '{"id": "BONN", "price": 200.0, "time": "1722598381000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7542335987091064, "change": -4.099998474121094, "priceHint": "2"}'),
-                ('event', '{"id": "NVDA", "price": 100.0, "time": "1722598382000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7176060676574707, "change": -4.05999755859375, "priceHint": "2"}'),
+                ('event', '{"id": "BONN", "price": 9000, "time": "1722598381000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7542335987091064, "change": -4.099998474121094, "priceHint": "2"}'),
+                ('event', '{"id": "NVDA", "price": 1, "time": "1722598382000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7176060676574707, "change": -4.05999755859375, "priceHint": "2"}'),
                 ('event', '{"id": "GOOG", "price": 50.11000061035156, "time": "1722598384000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7542335987091064, "change": -4.099998474121094, "priceHint": "2"}'),
                 ('event', '{"id": "NVDA", "price": 50.0, "time": "1722598384000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7542335987091064, "change": -4.099998474121094, "priceHint": "2"}'),
                 ('ERERLKJGklJDF89df8907sdfkjljk'),
@@ -84,7 +83,8 @@ def run(argv=None, save_main_session=True):
         )
 
         # # Read data from Kafka topic
-        # websocket_data = (pipeline 
+        # websocket_data = (
+        #     pipeline 
         #     | ReadFromKafka(
         #         consumer_config=kafka_consumer_config,
         #         topics=['data_stream'],
@@ -131,20 +131,20 @@ def run(argv=None, save_main_session=True):
             | "DEBUG: After windowing" >> beam.ParDo(DebugPrintAndReturn('after windowing'))
         )
 
-        class GetOutput(beam.DoFn):
+        class FormatOutput(beam.DoFn):
             def process(self, element, window=beam.DoFn.WindowParam):
                 yield {'stock_ticker': str(element[0]), 'timestamp': float(window.end), 'price': float(element[1])}
-
-        output_data = (
-            windowed_data
-            | "format output" >> beam.ParDo(GetOutput())
-            | "DEBUG: Before JDBCWrite" >> beam.ParDo(DebugPrintAndReturn('before JDBC write'))             
-        )
+                # yield DBRowSchema(str(element[0]), float(window.end), float(element[1]))
+        
+        # read postgres password from docker compose secrets file
+        db_password = open("/run/secrets/db-password", "r").read()
         
         write_output = (
-            output_data
+            windowed_data
+            | "format output" >> beam.ParDo(FormatOutput())
+            | "DEBUG: Before postgres upsert" >> beam.ParDo(DebugPrintAndReturn('before postgres upsert'))#.with_output_types(DBRowSchema)             
             | "upsert to postgres" >> WriteToPostgres(
-                "host=db port=5432 dbname=test_db user=postgres password=mysecretpassword",
+                f"host=db port=5432 dbname=test_db user=postgres password={db_password}",
                 ("INSERT INTO test_write_beam (stock_ticker, timestamp, price)"
                  "VALUES (%(stock_ticker)s, %(timestamp)s, %(price)s)"
                  "ON CONFLICT(stock_ticker, timestamp)"
@@ -155,7 +155,7 @@ def run(argv=None, save_main_session=True):
         # write_output = (output_data
         #     | "Write to postgres" >> beam.io.jdbc.WriteToJdbc(
         #          table_name='test_write_beam',
-        #          driver_class_name='org.postgresql:postgresql:42.7.3', # org.postgresql.Driver 
+        #          driver_class_name='org.postgresql.Driver',
         #          jdbc_url='jdbc:postgresql://db:5432/test_db',
         #          username='postgres',
         #          password='mysecretpassword',
@@ -175,7 +175,7 @@ def run(argv=None, save_main_session=True):
         #          classpath=['org.postgresql:postgresql:42.7.3']
         #       )
         # )
-        pipeline.run().wait_until_finish()
+        # pipeline.run().wait_until_finish()
         
 
 if __name__ == '__main__':
