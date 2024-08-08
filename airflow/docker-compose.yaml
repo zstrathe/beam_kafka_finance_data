@@ -85,6 +85,8 @@ x-airflow-common:
       condition: service_healthy
     airflow-postgres:
       condition: service_healthy
+  secrets:
+    - db-password
 
 services:
   airflow-postgres:
