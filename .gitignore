@@ -12,3 +12,4 @@ __pycache__
 /kubernetes
 *.code-workspace
 */tmp_checkpoints
+*.jar
