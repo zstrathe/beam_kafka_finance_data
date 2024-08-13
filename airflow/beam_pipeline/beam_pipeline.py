@@ -1,9 +1,13 @@
+'''
+NOT IN USE:
+    Unfortunately I couldn't get Beam to run this streaming pipeline without crashing while using the Direct Runner. 
+    It works fine when running in batch processing mode.
+    Perhaps it would work with a Beam runner that has more development effort behind it (Google Dataflow or Spark runner)
+'''
+
 import argparse
 import logging
-#import re
 import json
-#import typing
-#from datetime import datetime
 
 import apache_beam as beam
 #from apache_beam import coders
@@ -20,7 +24,7 @@ from beam_postgres.io import WriteToPostgres
 
 # Setup Kafka consumer configuration
 kafka_consumer_config = {
-    'bootstrap.servers':'broker:29092', #'broker:9092',
+    'bootstrap.servers': 'localhost:9092', #'broker:29092', #'broker:9092',
     'group.id': 'pipeline-consumer'
 }
 
@@ -68,45 +72,49 @@ def run(argv=None, save_main_session=True):
 
     # The pipeline will be run on exiting the with block.
     with beam.Pipeline(options=pipeline_options) as pipeline:
-        
-        websocket_data = (pipeline 
-            | beam.Create((
-                ('event', '{"id": "BONN", "price": 9000, "time": "1722598381000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7542335987091064, "change": -4.099998474121094, "priceHint": "2"}'),
-                ('event', '{"id": "NVDA", "price": 1, "time": "1722598382000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7176060676574707, "change": -4.05999755859375, "priceHint": "2"}'),
-                ('event', '{"id": "GOOG", "price": 50.11000061035156, "time": "1722598384000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7542335987091064, "change": -4.099998474121094, "priceHint": "2"}'),
-                ('event', '{"id": "NVDA", "price": 50.0, "time": "1722598384000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7542335987091064, "change": -4.099998474121094, "priceHint": "2"}'),
-                ('ERERLKJGklJDF89df8907sdfkjljk'),
-                ('event', '{"id": "AMZN", "price": 10.0999984741211, "time": "1722598385000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.763392210006714, "change": -4.1100006103515625, "priceHint": "2"}'),
-                ('event', '{"id": "NVDA", "price": 50.0, "time": "1722598387000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7176060676574707, "change": -4.05999755859375, "priceHint": "2"}'),
-                ('event', '{"id": "BONN", "price": 8000, "time": "1722914474725", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.69929575920105, "change": -4.040000915527344, "priceHint": "2"}')
-            ))
-        )
 
-        # # Read data from Kafka topic
-        # websocket_data = (
-        #     pipeline 
-        #     | ReadFromKafka(
-        #         consumer_config=kafka_consumer_config,
-        #         topics=['data_stream'],
-        #         max_num_records=10, #known_args.num_messages,
-        #         commit_offset_in_finalize=False
-        #       )
+        # test_batch_data = (pipeline 
+        #     | beam.Create((
+        #         ('event', '{"id": "BONN", "price": 9000, "time": "1722598381000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7542335987091064, "change": -4.099998474121094, "priceHint": "2"}'),
+        #         ('event', '{"id": "NVDA", "price": 1, "time": "1722598382000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7176060676574707, "change": -4.05999755859375, "priceHint": "2"}'),
+        #         ('event', '{"id": "GOOG", "price": 50.11000061035156, "time": "1722598384000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7542335987091064, "change": -4.099998474121094, "priceHint": "2"}'),
+        #         ('event', '{"id": "NVDA", "price": 50.0, "time": "1722598384000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7542335987091064, "change": -4.099998474121094, "priceHint": "2"}'),
+        #         ('ERERLKJGklJDF89df8907sdfkjljk'),
+        #         ('event', '{"id": "AMZN", "price": 10.0999984741211, "time": "1722598385000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.763392210006714, "change": -4.1100006103515625, "priceHint": "2"}'),
+        #         ('event', '{"id": "NVDA", "price": 50.0, "time": "1722598387000", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.7176060676574707, "change": -4.05999755859375, "priceHint": "2"}'),
+        #         ('event', '{"id": "BONN", "price": 8000, "time": "1722914474725", "exchange": "NMS", "quoteType": "CURRENCY", "changePercent": -3.69929575920105, "change": -4.040000915527344, "priceHint": "2"}')
+        #     ))
         # )
 
-        def extract_data(record):
+        # Read data from Kafka topic
+        websocket_data = (
+            pipeline 
+            | ReadFromKafka(
+                consumer_config={
+                    'bootstrap.servers': 'localhost:9092', #'broker:29092', #'broker:9092',
+                    'group.id': 'pipeline-consumer'
+                },
+                topics=['data_stream'],
+                #max_read_time=20,
+               # max_num_records=5000, #known_args.num_messages,
+                #commit_offset_in_finalize=False
+              )
+        )
+
+        def extract_data(element):
             try:
-                json_values = json.loads(record[1])
+                json_values = json.loads(element[1].decode())
                 # convert timestamp from milliseconds to seconds
                 json_values['time'] = int(json_values['time'])/1000
                 return (str(json_values['id']), float(json_values['time']), float(json_values['price']))
             except Exception as e:
                 print("Error: " , e)
                 return None
-
+         
         extracted_data = (
             websocket_data
            | "extract data" >> beam.Map(extract_data)
-           | "filter out invalid data" >> beam.Filter(lambda record: record is not None)
+           | "filter out invalid data" >> beam.Filter(lambda element: element is not None)
            | "DEBUG: after extracted" >> beam.ParDo(DebugPrintAndReturn('after extracted'))
         )
 
@@ -114,37 +122,40 @@ def run(argv=None, save_main_session=True):
 
         timestamped_data = (
             extracted_data
-            | "with timestamps" >> beam.Map(lambda record: beam.window.TimestampedValue(record, record[1]))
+            | "with timestamps" >> beam.Map(lambda element: beam.window.TimestampedValue(element, element[1]))
             | "DEBUG: after timestamped" >> beam.ParDo(DebugPrintAndReturn('after timestamped'))
+            
         )
 
         windowed_data = (
             timestamped_data
             | "DEBUG: before windowing" >> beam.ParDo(DebugPrintAndReturn('before windowing'))
             | "get fixed windows" >> beam.WindowInto(
-                    beam.window.FixedWindows(60),
-                    # trigger=AfterWatermark(early=AfterCount(60)),
-                    # accumulation_mode=beam.trigger.AccumulationMode.DISCARDING
+                    beam.window.FixedWindows(60*5),
+                    trigger=AfterWatermark(early=AfterProcessingTime(delay=30), late=AfterCount(1)),
+                    accumulation_mode=beam.trigger.AccumulationMode.ACCUMULATING,
+                    allowed_lateness=2592000
                 )
-            | "filter to price data" >> beam.Map(lambda record: (record[0], record[2]))
+            | "DEBUG: after windowing" >> beam.ParDo(DebugPrintAndReturn('after windowing'))
+            | "filter to price data" >> beam.Map(lambda element: (element[0], element[2]))
             | "avg stock price per minute per ticker" >> beam.combiners.Mean.PerKey()
-            | "DEBUG: After windowing" >> beam.ParDo(DebugPrintAndReturn('after windowing'))
+            | "DEBUG: After aggregation" >> beam.ParDo(DebugPrintAndReturn('after aggregation'))
         )
 
         class FormatOutput(beam.DoFn):
             def process(self, element, window=beam.DoFn.WindowParam):
                 yield {'stock_ticker': str(element[0]), 'timestamp': float(window.end), 'price': float(element[1])}
-                # yield DBRowSchema(str(element[0]), float(window.end), float(element[1]))
+               # yield DBRowSchema(str(element[0]), float(window.end), float(element[1]))
         
         # read postgres password from docker compose secrets file
-        db_password = open("/run/secrets/db-password", "r").read()
+        # db_password = open("/run/secrets/db-password", "r").read()
         
         write_output = (
             windowed_data
             | "format output" >> beam.ParDo(FormatOutput())
             | "DEBUG: Before postgres upsert" >> beam.ParDo(DebugPrintAndReturn('before postgres upsert'))#.with_output_types(DBRowSchema)             
             | "upsert to postgres" >> WriteToPostgres(
-                f"host=db port=5432 dbname=test_db user=postgres password={db_password}",
+                f"host=localhost port=5432 dbname=test_db user=postgres password=mysecretpassword",
                 ("INSERT INTO test_write_beam (stock_ticker, timestamp, price)"
                  "VALUES (%(stock_ticker)s, %(timestamp)s, %(price)s)"
                  "ON CONFLICT(stock_ticker, timestamp)"
@@ -162,20 +173,7 @@ def run(argv=None, save_main_session=True):
         #       )
         # )
 
-        # write_output = (pipeline
-        #     | "create data" >> beam.Create([
-        #         DBRowSchema(stock_ticker='TEST', timestamp=12345, price=100.00)
-        #       ]).with_output_types(DBRowSchema)
-        #     | "Write to postgres" >> beam.io.jdbc.WriteToJdbc(
-        #          table_name='test_write_beam',
-        #          driver_class_name='org.postgresql.Driver',
-        #          jdbc_url='jdbc:postgresql://db:5432/test_d',
-        #          username='postgres',
-        #          password='mysecretpassword',
-        #          classpath=['org.postgresql:postgresql:42.7.3']
-        #       )
-        # )
-        # pipeline.run().wait_until_finish()
+    # pipeline.run().wait_until_finish()
         
 
 if __name__ == '__main__':
