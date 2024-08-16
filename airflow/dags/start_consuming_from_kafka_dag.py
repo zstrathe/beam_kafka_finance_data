@@ -3,6 +3,7 @@ import socket
 import json
 from datetime import datetime
 import os
+import ast
 from confluent_kafka import Consumer, TopicPartition
 from airflow import DAG
 from airflow import models
@@ -54,7 +55,7 @@ class CheckKafkaNewMessagesSensor:
             self.spark_checkpoints_dir = spark_checkpoints_dir # "../spark_pipeline/tmp_checkpoints", (RUNNING IN DOCKER VIA AIRFLOW)"spark_pipeline/tmp_checkpoints"
 
     @classmethod
-    def _airflow_callable(cls, *args, **kwargs):
+    def airflow_callable(cls, *args, **kwargs):
         '''callable method to call with airflow PythonSensor
         '''
         instance = cls(*args, **kwargs)
@@ -66,21 +67,21 @@ class CheckKafkaNewMessagesSensor:
         if self.current_offset_source == "kafka":
             current_offsets = self.get_current_offsets_from_kafka()
         elif self.current_offset_source == "spark":
-            current_offsets = self.get_current_offsets_from_spark_checkpoint()
+            current_offsets = self.get_current_offsets_from_spark_logged()
 
         end_offsets = self.get_high_watermark_offsets_from_kafka()
         
         # check if there are new messages
-        print("TEST CURRENT AND END OFFSETS:", " curr: ", current_offsets, "; end: ", end_offsets)
+        print("CURRENT AND END OFFSETS:", " current: ", current_offsets, "; end: ", end_offsets)
         for partition, current_offset in current_offsets.items():
             end_offset = end_offsets.get(partition, 0)
             num_new_messages = end_offset - current_offset
             if num_new_messages >= self.msg_threshold:
                 # New messages are available
-                print(f'TEST: ABOVE MESSAGE THRESHOLD: {num_new_messages} NEW MESSAGES AVAILABLE IN KAFKA')
+                print(f'ABOVE MESSAGE THRESHOLD: {num_new_messages} NEW MESSAGES AVAILABLE IN KAFKA')
                 return True
             elif num_new_messages > 0:
-                print(f'TEST: BELOW MESSAGE THRESHOLD: {num_new_messages} NEW MESSAGES AVAILABLE IN KAFKA')
+                print(f'BELOW MESSAGE THRESHOLD: {num_new_messages} NEW MESSAGES AVAILABLE IN KAFKA')
                 return False
         # No new messages found
         print('NEW MESSAGES ARE NOT AVAILABLE IN KAFKA')
@@ -109,8 +110,18 @@ class CheckKafkaNewMessagesSensor:
                                 max_timestamp_offsets = offsets
                         except Exception as e:
                             print('Error reading file: ', e)
-        print("TEST: spark offsets: ", max_timestamp_offsets)
         return max_timestamp_offsets
+
+    def get_current_offsets_from_spark_logged(self) -> dict:
+        try:
+            print('offset file path is file: ', os.path.isfile('spark_pipeline/last_offsets'))
+            with open('spark_pipeline/last_offsets', 'r', encoding='utf-8') as f:
+                read_offsets = f.read()
+            current_offsets = ast.literal_eval(read_offsets)
+        except Exception as e:
+            print('error reading offsets: ', e)
+            current_offsets = {0: 0}
+        return current_offsets
 
     def get_current_offsets_from_kafka(self) -> dict:
         ''' 
@@ -179,19 +190,19 @@ class CheckKafkaNewMessagesSensor:
 
 with DAG(
     dag_id='kafka_spark_streaming_dag',
-    start_date=datetime(2024, 3, 30),
-    schedule='@once',   #  '@continuous',   #'*/15 * * * *',
+    start_date=datetime(2024, 8, 16),
+    schedule='@continuous', #'@once', #'@continuous', #'@once',   #  '@continuous',   #'*/15 * * * *',
     max_active_runs=1,
     catchup=False
     ) as dag:
     
     check_kafka_new_messages = PythonSensor(
         task_id='check_if_new_messages_in_kafka_topic',
-        python_callable=CheckKafkaNewMessagesSensor._airflow_callable,
+        python_callable=CheckKafkaNewMessagesSensor.airflow_callable,
         op_kwargs={'current_offset_source': 'spark',
                    'spark_checkpoints_dir': 'spark_pipeline/tmp_checkpoints'},
-        mode='reschedule',
-        reschedule_interval=60*10
+        mode='poke',
+        poke_interval=60*20
     )
 
     start_spark_pipeline = BashOperator(
