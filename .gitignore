@@ -11,5 +11,5 @@ __pycache__
 /airflow/config
 /kubernetes
 *.code-workspace
-*/tmp_checkpoints
+*/*/tmp_checkpoints
 *.jar
