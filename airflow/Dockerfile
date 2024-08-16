@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM apache/airflow:2.8.4 as base
+FROM apache/airflow:latest-python3.12 as base
 
 USER root
 # install java runtime 
