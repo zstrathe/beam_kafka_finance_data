@@ -11,5 +11,6 @@ __pycache__
 /airflow/config
 /kubernetes
 *.code-workspace
-*/*/tmp_checkpoints
+airflow/spark_pipeline/tmp_checkpoints
+kafka/kafka_data
 *.jar
