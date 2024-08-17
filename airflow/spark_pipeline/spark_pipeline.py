@@ -1,10 +1,9 @@
-import argparse
-import json
 import os
 import time
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, window, mean, to_timestamp
-from pyspark.sql.types import StructType, StructField, StringType, FloatType, TimestampType
+from pyspark.sql.functions import from_json, col, window, mean
+from pyspark.sql.types import StructType, StructField, StringType, FloatType
+from pyspark.sql.streaming import StreamingQuery
 
 def create_spark_session():
     return SparkSession.builder \
@@ -36,15 +35,18 @@ def process_data(spark):
         .format("kafka") \
         .option("kafka.bootstrap.servers", "broker:29092") \
         .option("subscribe", "data_stream") \
-        .option("group.id", "pipeline-consumer") \
-        .option("startingOffsets", "earliest") \
         .load()
 #  .option("startingOffsets", "earliest") \
 
     # Extract and transform data
     extracted_df = extract_data(df)
 
+    # TODO:
+    # - remove duplicates if any
+    # - convert timestamp from gmt and add tz?
+
     # Window and aggregate data
+    # use 5 minute windows and avg of price per window
     windowed_df = extracted_df \
         .withWatermark("timestamp", "0 minutes") \
         .groupBy(
@@ -67,18 +69,18 @@ def process_data(spark):
         .writeStream \
         .outputMode("append") \
         .foreachBatch(write_to_postgres) \
-        .trigger(processingTime='5 minutes') \
         .start()
+    #  .trigger(processingTime='5 minutes') \
     
-    # monitor query and stop if idle (no new records from kafka) for 2 minutes
-    monitor_and_stop_query_and_log_offsets(query, 60*2)
+    # monitor query and stop if idle (no new records from kafka) for 10 minutes
+    monitor_and_stop_query_and_log_offsets(query, 60*10)
 
     query.awaitTermination()
-
 
 def write_to_postgres(batch_df, batch_id):
     print(f"Writing batch {batch_id} to Postgres")
     print(f"Number of records: {batch_df.count()}")
+    
     # JDBC properties
     jdbc_url = "jdbc:postgresql://db:5432/test_db"
     properties = {
@@ -107,9 +109,10 @@ def write_to_postgres(batch_df, batch_id):
 
 def monitor_and_stop_query_and_log_offsets(query, max_idle_time_seconds):
     last_progress_time = time.time()
-    last_progress_batch_id = 0
-    last_progress_num_input_rows = 0
 
+    # initialize kafka offset logging
+    offsets_logger = OffsetsWrittenToDBLogger()
+   
     while query.isActive:
         # Wait for some time before checking progress
         time.sleep(10)  # Check every 10 seconds
@@ -118,19 +121,10 @@ def monitor_and_stop_query_and_log_offsets(query, max_idle_time_seconds):
         latest_progress = query.lastProgress
         
         if latest_progress:
-            # look for case when batchId increases, and the number of input rows goes from a positive number to zero
-            # seems reasonably safe to assume that the offset has decreased then and rows have been written to db
-            if latest_progress['batchId'] > last_progress_batch_id and latest_progress['numInputRows'] == 0 and last_progress_num_input_rows > 0:
-                latest_progress_offsets = latest_progress['sources'][0]['endOffset']['data_stream']
-                # make sure the offsets partition and value are stored as ints for comparison
-                latest_progress_offsets = {int(k): int(v) for k, v in latest_progress_offsets.items()}
-                with open('last_offsets', 'w', encoding='utf-8') as f:
-                    f.write(str(latest_progress_offsets))
-                print('Updated offset file!')
+            print(latest_progress)
+            # check and update custom logging of kafka offsets
+            offsets_logger.check_progress(latest_progress)
 
-            last_progress_batch_id = latest_progress['batchId']
-            last_progress_num_input_rows = latest_progress['numInputRows']
-           
             # update the last progress time if new data was processed
             if latest_progress['numInputRows'] > 0:
                 last_progress_time = time.time()
@@ -141,9 +135,39 @@ def monitor_and_stop_query_and_log_offsets(query, max_idle_time_seconds):
                 print(f"No new data received for {idle_time} seconds. Stopping the query.")
                 query.stop()
                 break
-        
+
         # Print some progress information
         print(f"Query is still active. Idle time: {time.time() - last_progress_time} seconds")
+
+class OffsetsWrittenToDBLogger:
+    ''' logger to keep track of Kafka high watermark offsets for records that have been included in db writes
+    '''
+    def __init__(self):
+        # each time spark streaming query is started, the batchId will start at zero
+        self.last_seen_result_batch_id = 0
+        
+        self.last_step_offsets = {0: 0}
+
+    def check_progress(self, next_progress: StreamingQuery.lastProgress):
+        ''' 
+        check progress of most recent batch
+            param: current_batch_id (str): the batch id of the step (micro-batch) being run 
+                '''
+        
+        # update the offset file when the batch id increases 
+        # (this assumes that new batch always follows a db write operation??)
+        if next_progress['batchId'] > self.last_seen_result_batch_id:
+            with open('last_offsets', 'w', encoding='utf-8') as f:
+                    f.write(str(self.last_step_offsets))
+                    print('Updated offset file!')   
+
+        # update the current batch offsets
+        latest_progress_offsets = next_progress['sources'][0]['endOffset']['data_stream']
+        latest_progress_offsets = {int(k): int(v) for k, v in latest_progress_offsets.items()}
+        
+        # update tracked offsets and batch
+        self.last_step_offsets = latest_progress_offsets
+        self.last_seen_result_batch_id = next_progress['batchId']
 
 def run_pipeline():
     # change current dir to spark_pipeline dev directory

@@ -191,7 +191,7 @@ class CheckKafkaNewMessagesSensor:
 with DAG(
     dag_id='kafka_spark_streaming_dag',
     start_date=datetime(2024, 8, 16),
-    schedule='@continuous', #'@once', #'@continuous', #'@once',   #  '@continuous',   #'*/15 * * * *',
+    schedule='@continuous', #'@once',   #  '@continuous',   #'*/15 * * * *',
     max_active_runs=1,
     catchup=False
     ) as dag:
@@ -202,7 +202,7 @@ with DAG(
         op_kwargs={'current_offset_source': 'spark',
                    'spark_checkpoints_dir': 'spark_pipeline/tmp_checkpoints'},
         mode='poke',
-        poke_interval=60*20
+        poke_interval=60*45
     )
 
     start_spark_pipeline = BashOperator(
