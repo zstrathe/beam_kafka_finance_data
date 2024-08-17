@@ -22,6 +22,7 @@ class StockPricingDataSocket:
 
     def __init__(self):
         self.message_count = 0
+        self.example_messages = []
 
     def run(self):
         # start a thread to monitor message count per minute
@@ -41,8 +42,11 @@ class StockPricingDataSocket:
     def monitor_message_count(self, time_interval=60):
         while True:
             initial_count = self.message_count
+            self.example_messages = []
             time.sleep(time_interval)
             logging.info('Count of messages in last %i seconds: %i' , time_interval, self.message_count - initial_count)
+            if (len(self.example_messages) > 0):
+                logging.info('Example messages: %s', self.example_messages)
 
     # WebSocket message callback function
     def on_open(self, ws):
@@ -57,6 +61,8 @@ class StockPricingDataSocket:
             dict_message = self.y_finance_data_proto_parser.parse(message_bytes).to_json()
             self.producer.produce('data_stream', value=dict_message.encode('utf-8'))
             self.producer.flush()
+            if self.message_count < 3: 
+                self.example_messages.append(dict_message)
             self.message_count += 1
         except Exception as e:
             logging.error("Error producing Kafka message: %s", e)
