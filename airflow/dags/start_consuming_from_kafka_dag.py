@@ -6,23 +6,10 @@ import os
 import ast
 from confluent_kafka import Consumer, TopicPartition
 from airflow import DAG
-from airflow import models
-from airflow.models import TaskInstance
-from airflow.models.dagrun import DagRun
-from airflow.operators.python_operator import PythonOperator, ShortCircuitOperator
 from airflow.operators.bash import BashOperator
-# from airflow.providers.apache.beam.operators.beam import BeamRunPythonPipelineOperator
-
 from airflow.sensors.python import PythonSensor
 from kafka import BrokerConnection
-from kafka.protocol.commit import *
-
-# add .packages/ directory to sys.path, so that other relative modules can be imported
-# import os
-# import sys
-# sys.path.append(os.path.dirname('/opt/airflow/spark_pipeline')) 
-# from spark_pipeline.spark_pipeline import run_pipeline
-#from test_operator import BeamRunPythonPipelineOperator
+from kafka.protocol.commit import OffsetFetchRequest_v3
 
 logger = logging.getLogger("airflow.task")
 
@@ -78,10 +65,10 @@ class CheckKafkaNewMessagesSensor:
             num_new_messages = end_offset - current_offset
             if num_new_messages >= self.msg_threshold:
                 # New messages are available
-                print(f'ABOVE MESSAGE THRESHOLD: {num_new_messages} NEW MESSAGES AVAILABLE IN KAFKA')
+                print(f'ABOVE MESSAGE THRESHOLD ({self.msg_threshold}): {num_new_messages} NEW MESSAGES AVAILABLE IN KAFKA')
                 return True
             elif num_new_messages > 0:
-                print(f'BELOW MESSAGE THRESHOLD: {num_new_messages} NEW MESSAGES AVAILABLE IN KAFKA')
+                print(f'BELOW MESSAGE THRESHOLD ({self.msg_threshold}): {num_new_messages} NEW MESSAGES AVAILABLE IN KAFKA')
                 return False
         # No new messages found
         print('NEW MESSAGES ARE NOT AVAILABLE IN KAFKA')
@@ -114,7 +101,6 @@ class CheckKafkaNewMessagesSensor:
 
     def get_current_offsets_from_spark_logged(self) -> dict:
         try:
-            print('offset file path is file: ', os.path.isfile('spark_pipeline/last_offsets'))
             with open('spark_pipeline/last_offsets', 'r', encoding='utf-8') as f:
                 read_offsets = f.read()
             current_offsets = ast.literal_eval(read_offsets)
