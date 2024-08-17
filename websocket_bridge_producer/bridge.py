@@ -61,7 +61,7 @@ class StockPricingDataSocket:
             dict_message = self.y_finance_data_proto_parser.parse(message_bytes).to_json()
             self.producer.produce('data_stream', value=dict_message.encode('utf-8'))
             self.producer.flush()
-            if self.message_count < 3: 
+            if len(self.example_messages) <= 3: 
                 self.example_messages.append(dict_message)
             self.message_count += 1
         except Exception as e:
