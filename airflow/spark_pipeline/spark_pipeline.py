@@ -1,5 +1,6 @@
 import os
 import time
+import psycopg2
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, window, mean
 from pyspark.sql.types import StructType, StructField, StringType, FloatType
@@ -35,6 +36,7 @@ def process_data(spark):
         .format("kafka") \
         .option("kafka.bootstrap.servers", "broker:29092") \
         .option("subscribe", "data_stream") \
+        .option("startingOffsets", "earliest") \
         .load()
 #  .option("startingOffsets", "earliest") \
 
@@ -47,8 +49,9 @@ def process_data(spark):
 
     # Window and aggregate data
     # use 5 minute windows and avg of price per window
+    # and set a 15 minute watermark (cutoff for late-arriving data)
     windowed_df = extracted_df \
-        .withWatermark("timestamp", "0 minutes") \
+        .withWatermark("timestamp", "15 minutes") \
         .groupBy(
             window("timestamp", "5 minutes"),
             "stock_ticker"
@@ -65,47 +68,56 @@ def process_data(spark):
     output_df.writeStream.format("console").start()
 
     # Write to PostgreSQL
+    # to emit results early (when using "update" mode) use a processingTime trigger to set when 
+    # results will start emitting for each window 
+    # (set outputMode to "append" when not emitting early results)
     query = output_df \
         .writeStream \
-        .outputMode("append") \
+        .trigger(processingTime='1 minutes') \
+        .outputMode("update") \
         .foreachBatch(write_to_postgres) \
         .start()
-    #  .trigger(processingTime='5 minutes') \
     
-    # monitor query and stop if idle (no new records from kafka) for 10 minutes
-    monitor_and_stop_query_and_log_offsets(query, 60*10)
+    # monitor query and stop if idle (no new records from kafka) for 15 minutes
+    monitor_and_stop_query_and_log_offsets(query, max_idle_time_seconds=60*15)
 
     query.awaitTermination()
 
 def write_to_postgres(batch_df, batch_id):
     print(f"Writing batch {batch_id} to Postgres")
     print(f"Number of records: {batch_df.count()}")
+
+    target_table_name = 'test_write'
+    staging_table_name = target_table_name + '_staging'
     
     # JDBC properties
-    jdbc_url = "jdbc:postgresql://db:5432/test_db"
-    properties = {
+    jdbc_properties = {
+        "host": "db",
+        "port": "5432",
+        "database": "test_db",
         "user": "postgres",
         "password": "mysecretpassword",
         "driver": "org.postgresql.Driver"
     }
+    jdbc_url = f"jdbc:postgresql://{jdbc_properties['host']}:{jdbc_properties['port']}/{jdbc_properties['database']}"
 
-    # # Create a temporary view of the batch data
-    # batch_df.createOrReplaceTempView("updates")
-
-    # # Perform the upsert operation
-    # upsert_sql = """
-    # INSERT INTO test_write (stock_ticker, timestamp, price)
-    # VALUES (stock_ticker, timestamp, price)
-    # ON CONFLICT(stock_ticker, timestamp)
-    # DO UPDATE SET price = EXCLUDED.price
-    # """
-
-    # # Execute the upsert operation
-    # batch_df.sparkSession.sql(upsert_sql)
-
-    # # Write to PostgreSQL
+    # write staging table to PostgreSQL
     batch_df.write \
-        .jdbc(url=jdbc_url, table="test_write", mode="append", properties=properties)
+        .jdbc(url=jdbc_url, table=staging_table_name, mode="overwrite", properties=jdbc_properties)
+    
+    # run query to "upsert" from staging table to target table
+    with psycopg2.connect(**{k:v for k, v in jdbc_properties.items() if k != 'driver'}) as conn:
+        with conn.cursor() as cursor: 
+            upsert_sql = (
+                f"INSERT INTO {target_table_name} (stock_ticker, timestamp, price)"
+                "SELECT stock_ticker, timestamp, price "
+                f"FROM {staging_table_name} "
+                "ON CONFLICT(stock_ticker, timestamp) "
+                "DO UPDATE SET price = EXCLUDED.price"
+            )
+            cursor.execute(upsert_sql) 
+            cursor.execute(f'DROP TABLE {staging_table_name}')
+        conn.commit()
 
 def monitor_and_stop_query_and_log_offsets(query, max_idle_time_seconds):
     last_progress_time = time.time()
@@ -174,6 +186,7 @@ def run_pipeline():
     os.chdir('/opt/airflow/spark_pipeline') # COMMENT OUT IF NOT RUNNING VIA AIRFLOW
     spark = create_spark_session()
     process_data(spark)
+
 
 if __name__ == "__main__":
     run_pipeline()
