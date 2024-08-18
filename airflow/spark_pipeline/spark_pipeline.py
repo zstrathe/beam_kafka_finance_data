@@ -36,27 +36,28 @@ def process_data(spark):
         .format("kafka") \
         .option("kafka.bootstrap.servers", "broker:29092") \
         .option("subscribe", "data_stream") \
-        .option("startingOffsets", "earliest") \
         .load()
 #  .option("startingOffsets", "earliest") \
 
     # Extract and transform data
     extracted_df = extract_data(df)
 
-    # TODO:
-    # - remove duplicates if any
-    # - convert timestamp from gmt and add tz?
+    # clean df by dropping duplicate data
+    # also set a 15 minute watermark to cutoff late arriving data
+    cleaned_df = extracted_df \
+        .withWatermark("timestamp", "15 minutes") \
+        .dropDuplicatesWithinWatermark(["timestamp", "stock_ticker"])
 
     # Window and aggregate data
     # use 5 minute windows and avg of price per window
-    # and set a 15 minute watermark (cutoff for late-arriving data)
-    windowed_df = extracted_df \
-        .withWatermark("timestamp", "15 minutes") \
+    ##### and set a 15 minute watermark (cutoff for late-arriving data)
+    windowed_df = cleaned_df \
         .groupBy(
             window("timestamp", "5 minutes"),
             "stock_ticker"
         ) \
         .agg(mean("price").alias("avg_price"))
+#   .withWatermark("timestamp", "15 minutes") \
 
     # Prepare output
     output_df = windowed_df.select(
@@ -133,7 +134,8 @@ def monitor_and_stop_query_and_log_offsets(query, max_idle_time_seconds):
         latest_progress = query.lastProgress
         
         if latest_progress:
-            print(latest_progress)
+            # print(latest_progress)
+            
             # check and update custom logging of kafka offsets
             offsets_logger.check_progress(latest_progress)
 
