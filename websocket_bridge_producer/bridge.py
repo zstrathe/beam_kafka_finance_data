@@ -35,7 +35,7 @@ class StockPricingDataSocket:
             on_error=self.on_error,
             on_open=self.on_open
         )
-        ws.run_forever(dispatcher=rel, reconnect=5)
+        ws.run_forever(ping_interval=240, suppress_origin=True, dispatcher=rel, reconnect=5)
         rel.signal(2, rel.abort)
         rel.dispatch()
  
