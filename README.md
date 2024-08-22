@@ -28,6 +28,7 @@ flowchart TB
 	- I ended up contributing a PR to the Airflow providers repository for the BeamRunPythonPipelineOperator because there was a bug that wouldn't allow it to run pipelines from files stored locally.
 
 ## Future Plans
+- Incorporate kubernetes into spark workers (for scaling as-needed) and kafka (mostly for fault-tolerance, to ensure that every streaming message is received and processed in case the broker or zookeeper ever crash, even though they're set to always restart).
 - Add additional data collection, such as news articles collected with web scraping, and perform feature transformation methods to store (such as sentiment scores for news articles). And maybe weather data.
 - Develop a time-series neural network model that is trained on past data, and conditioned on other various factors. 
 
