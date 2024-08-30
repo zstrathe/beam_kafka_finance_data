@@ -13,5 +13,5 @@ __pycache__
 *.code-workspace
 airflow/spark_pipeline/tmp_checkpoints
 airflow/spark_pipeline/last_offsets
-kafka/kafka_data
+kafka/data/*
 *.jar
