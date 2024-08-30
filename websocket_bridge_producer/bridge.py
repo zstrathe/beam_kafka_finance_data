@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 class StockPricingDataSocket:
     # Kafka configuration
-    kafka_conf = {'bootstrap.servers': 'broker:29092'}
+    kafka_conf = {'bootstrap.servers': 'kafka:9092'}
     
     producer = Producer(kafka_conf)
 
