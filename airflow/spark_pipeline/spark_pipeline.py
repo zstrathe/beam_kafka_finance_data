@@ -34,7 +34,7 @@ def process_data(spark):
     df = spark \
         .readStream \
         .format("kafka") \
-        .option("kafka.bootstrap.servers", "broker:29092") \
+        .option("kafka.bootstrap.servers", "kafka:9092") \
         .option("subscribe", "data_stream") \
         .load()
 #  .option("startingOffsets", "earliest") \
@@ -90,8 +90,6 @@ def write_to_postgres(batch_df, batch_id):
 
     target_table_name = 'test_write'
     staging_table_name = target_table_name + '_staging'
-    
-    # JDBC properties
     jdbc_properties = {
         "host": "db",
         "port": "5432",
@@ -127,7 +125,6 @@ def monitor_and_stop_query_and_log_offsets(query, max_idle_time_seconds):
     offsets_logger = OffsetsWrittenToDBLogger()
    
     while query.isActive:
-        # Wait for some time before checking progress
         time.sleep(10)  # Check every 10 seconds
 
         # Get the latest progress

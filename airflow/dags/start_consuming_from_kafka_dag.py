@@ -20,7 +20,7 @@ class CheckKafkaNewMessagesSensor:
     def __init__(self, 
                  topic_name: str = 'data_stream', 
                  group_id: str = 'pipeline-consumer', 
-                 broker_bootstrap_url: str = 'broker:29092', # broker:29092 inside docker, localhost:9092 outside of docker
+                 broker_bootstrap_url: str = 'kafka:9092',
                  new_message_threshold: int = 25,
                  current_offset_source: str = "",
                  spark_checkpoints_dir: str = "", 
@@ -177,7 +177,7 @@ class CheckKafkaNewMessagesSensor:
 with DAG(
     dag_id='kafka_spark_streaming_dag',
     start_date=datetime(2024, 8, 16),
-    schedule='@continuous', #'@once',   #  '@continuous',   #'*/15 * * * *',
+    schedule='@once',   #  '@continuous',   #'*/15 * * * *',
     max_active_runs=1,
     catchup=False
     ) as dag:
