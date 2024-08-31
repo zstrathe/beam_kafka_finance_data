@@ -9,9 +9,9 @@ __pycache__
 *(copy)*
 *_test_*
 /airflow/config
-/kubernetes
 *.code-workspace
 airflow/spark_pipeline/tmp_checkpoints
 airflow/spark_pipeline/last_offsets
 kafka/data/*
 *.jar
+.kube/

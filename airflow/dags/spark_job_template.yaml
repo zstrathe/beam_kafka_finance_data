@@ -1,0 +1,138 @@
+spark:
+  apiVersion: sparkoperator.k8s.io/v1beta2
+  version: v1beta2
+  kind: SparkApplication
+  apiGroup: sparkoperator.k8s.io
+  metadata:
+    namespace: spark-namespace
+  spec:
+    type: Python
+    pythonVersion: "3"
+    mode: cluster
+    sparkVersion: 3.0.0
+    successfulRunHistoryLimit: 1
+    restartPolicy:
+      type: Never
+    imagePullPolicy: Always
+    hadoopConf: {}
+    imagePullSecrets: []
+    dynamicAllocation:
+      enabled: false
+      initialExecutors: 1
+      minExecutors: 1
+      maxExecutors: 1
+    labels: {}
+    driver:
+      serviceAccount: spark
+      container_resources:
+        gpu:
+          name: null
+          quantity: 0
+        cpu:
+          request: null
+          limit: null
+        memory:
+          request: null
+          limit: null
+    executor:
+      instances: 1
+      container_resources:
+        gpu:
+          name: null
+          quantity: 0
+        cpu:
+          request: null
+          limit: null
+        memory:
+          request: null
+          limit: null
+kubernetes:
+  # example:
+  # env_vars:
+  # - name: TEST_NAME
+  #   value: TEST_VALUE
+  env_vars: []
+
+  # example:
+  # env_from:
+  # - name: test
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: mongo-secret
+  #       key: mongo-password
+  env_from: []
+
+  # example:
+  # node_selector:
+  #   karpenter.sh/provisioner-name: spark
+  node_selector: {}
+
+  # example: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #       - matchExpressions:
+  #         - key: beta.kubernetes.io/instance-type
+  #           operator: In
+  #           values:
+  #           - r5.xlarge
+  affinity:
+    nodeAffinity: {}
+    podAffinity: {}
+    podAntiAffinity: {}
+
+  # example: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+  # type: list
+  # tolerations:
+  # - key: "key1"
+  #   operator: "Equal"
+  #   value: "value1"
+  #   effect: "NoSchedule"
+  tolerations: []
+
+  # example:
+  # config_map_mounts:
+  #   snowflake-default: /mnt/tmp
+  config_map_mounts: {}
+
+  # example:
+  # volume_mounts:
+  # - name: config
+  #   mountPath: /airflow
+  volume_mounts: 
+    - name: pipeline_dir
+      mountPath: /opt/airflow/spark_pipeline
+
+  # https://kubernetes.io/docs/concepts/storage/volumes/
+  # example:
+  # volumes:
+  # - name: config
+  #   persistentVolumeClaim:
+  #     claimName: airflow
+  volumes:
+   - name: pipeline_dir
+     hostPath:
+       path: /home/zack/Documents/pyprojects/finance_data_proj/airflow/spark_pipeline
+     
+
+  # read config map into an env variable
+  # example:
+  # from_env_config_map:
+  # - configmap_1
+  # - configmap_2
+  from_env_config_map: []
+
+  # load secret into an env variable
+  # example:
+  # from_env_secret:
+  # - secret_1
+  # - secret_2
+  from_env_secret: []
+
+  image_pull_secrets: []
+
+  in_cluster: false
+  conn_id: kubernetes_default
+  kube_config_file: null
+  cluster_context: null

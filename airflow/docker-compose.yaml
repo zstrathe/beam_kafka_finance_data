@@ -77,6 +77,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/beam_pipeline:/opt/airflow/beam_pipeline
     - ${AIRFLOW_PROJ_DIR:-.}/spark_pipeline:/opt/airflow/spark_pipeline
     - ${AIRFLOW_PROJ_DIR:-.}/config/airflow.cfg:/opt/airflow/config/airflow.cfg
+    - ${AIRFLOW_PROJ_DIR:-.}/../kubernetes/.kube/:/.kube/
     # pass through the docker socket (w/ reac & execute permissions) as it is needed to run beam pipeline using java-based IO connectors 
     - /var/run/docker.sock:/var/run/docker.sock:5
   user: "${AIRFLOW_UID:-50000}:0"
@@ -88,6 +89,9 @@ x-airflow-common:
       condition: service_healthy
   secrets:
     - db-password
+  networks:
+    - default
+    - minikube-network
 
 services:
   airflow-postgres:
@@ -149,7 +153,7 @@ services:
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
-        condition: service_completed_successfully
+        condition: service_completed_successfully 
 
   airflow-worker:
     <<: *airflow-common
@@ -290,3 +294,8 @@ services:
 
 volumes:
   postgres-airflow-db-volume:
+
+networks:
+  minikube-network:
+    external: true
+    name: minikube
