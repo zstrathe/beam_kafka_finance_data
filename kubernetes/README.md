@@ -6,4 +6,5 @@ To setup locally with minikube:
 - Install the Spark Operator on the host PC with Helm (https://www.kubeflow.org/docs/components/spark-operator/getting-started/)
 - Add minikube docker network to airflow .yaml
 - Setup Airflow connection for a "Kubernetes Cluster Connection" with config path matching path copied into Airflow container (e.g., /.kube/config if copied into root of container)
-- create namespace and serviceAccount??
+- run: kubectl create clusterrolebinding spark-role --clusterrole=edit --serviceaccount=default:spark --namespace=default
+

@@ -30,7 +30,7 @@ with DAG(
    
     spark_run_kubernetes = SparkKubernetesOperator(
     task_id="spark_task",
-    image="gcr.io/spark-operator/spark-py:v3.1.1",  # OR custom image using that
+    image="apache/spark-docker:v3.3.0", #"gcr.io/spark-operator/spark-py:v3.1.1",  # OR custom image using that
     code_path="local://opt/airflow/spark_pipeline/spark_pipeline.py",
     application_file= "spark_job_template.yaml",  # OR spark_job_template.json
     # namespace='spark-namespace',
