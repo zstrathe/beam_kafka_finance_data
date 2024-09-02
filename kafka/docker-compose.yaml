@@ -17,3 +17,4 @@ services:
       - "29092:29092"
     volumes:
       - ./data:/bitnami/kafka
+    restart: always
